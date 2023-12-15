@@ -62,6 +62,7 @@ void wifiConnection () {
     delay(3000);
     lcd.clear();
     imprimirMensajeEnLCD (Ip, 0, 0);
+    Serial.println (Ip);
     delay (5000);
     lcd.clear ();
     ticker.detach();
