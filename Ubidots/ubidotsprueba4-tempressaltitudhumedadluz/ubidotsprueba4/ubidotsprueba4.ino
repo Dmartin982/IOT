@@ -13,7 +13,7 @@
 #define LAB_PRES "atmospheric-pressure"
 #define BMP280_ADDRESS (0x77)
 
-
+const int ldrPin = A0;
 float temp, pres;
 int hum, led;
 
@@ -23,6 +23,7 @@ DHT dht (D3, DHT11);
 Adafruit_BMP280 barometro;
 
 void setup() {
+pinMode (ldrPin, INPUT);
 pinMode(pinLed, OUTPUT);
 pinMode(pinLed2, OUTPUT);
 wifiConnection();
@@ -31,13 +32,15 @@ if (!barometro.begin()) {
 Serial.println(F("Error: No se detecta sensor BMP280"));
 while (1);
   }
- 
 dht.begin();
-
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+  int ldrStatus = analogRead (ldrPin);
+  if (ldrStatus <= 300) {digitalWrite (pinLed2, HIGH);}
+  else {digitalWrite (pinLed2, LOW);}
   
   hum = dht.readHumidity();
   temp = dht.readTemperature();
