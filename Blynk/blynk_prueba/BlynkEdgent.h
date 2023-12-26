@@ -1,11 +1,13 @@
 
 extern "C" {
+  #include "user_interface.h"
+
   void app_loop();
   void restartMCU();
 }
 
 #include "Settings.h"
-#include <BlynkSimpleEsp32_SSL.h>
+#include <BlynkSimpleEsp8266_SSL.h>
 
 #if defined(BLYNK_USE_LITTLEFS)
   #include <LittleFS.h>
@@ -17,6 +19,10 @@ extern "C" {
     #include <FS.h>
   #endif
   #define BLYNK_FS SPIFFS
+#endif
+#if defined(BLYNK_FS) && defined(ESP8266)
+  #define BLYNK_FILE_READ  "r"
+  #define BLYNK_FILE_WRITE "w"
 #endif
 
 #ifndef BLYNK_NEW_LIBRARY
@@ -70,8 +76,9 @@ void printDeviceBanner()
                 " - •••• - •••• - ••••");
   }
   BLYNK_PRINT.print(" Platform:  "); BLYNK_PRINT.println(String(BLYNK_INFO_DEVICE) + " @ " + ESP.getCpuFreqMHz() + "MHz");
-  BLYNK_PRINT.print(" Chip rev:  "); BLYNK_PRINT.println(ESP.getChipRevision());
+  BLYNK_PRINT.print(" Boot ver:  "); BLYNK_PRINT.println(ESP.getBootVersion());
   BLYNK_PRINT.print(" SDK:       "); BLYNK_PRINT.println(ESP.getSdkVersion());
+  BLYNK_PRINT.print(" ESP Core:  "); BLYNK_PRINT.println(ESP.getCoreVersion());
   BLYNK_PRINT.print(" Flash:     "); BLYNK_PRINT.println(String(ESP.getFlashChipSize() / 1024) + "K");
   BLYNK_PRINT.print(" Free mem:  "); BLYNK_PRINT.println(ESP.getFreeHeap());
   BLYNK_PRINT.println("----------------------------------------------------");
@@ -96,14 +103,9 @@ class Edgent {
 public:
   void begin()
   {
-    WiFi.persistent(false);
-    WiFi.enableSTA(true); // Needed to get MAC
-#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 0, 0))
-    WiFi.setMinSecurity(WIFI_AUTH_WEP);
-#endif
 
 #ifdef BLYNK_FS
-    BLYNK_FS.begin(true);
+    BLYNK_FS.begin();
 #endif
 
     indicator_init();
@@ -150,4 +152,3 @@ void app_loop() {
     edgentTimer.run();
     edgentConsole.run();
 }
-

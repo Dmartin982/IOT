@@ -98,38 +98,31 @@ static bool config_load_blnkopt()
   return true;
 }
 
-#include <Preferences.h>
+#include <EEPROM.h>
+#define EEPROM_CONFIG_START 0
 
 void config_load()
 {
-  Preferences prefs;
-  if (prefs.begin("blynk", true)) { // read-only
-    memset(&configStore, 0, sizeof(configStore));
-    prefs.getBytes("config", &configStore, sizeof(configStore));
-    if (configStore.magic != configDefault.magic) {
-      DEBUG_PRINT("Using default config.");
-      configStore = configDefault;
-    }
-  } else {
-    DEBUG_PRINT("Config read failed");
+  memset(&configStore, 0, sizeof(configStore));
+  EEPROM.get(EEPROM_CONFIG_START, configStore);
+  if (configStore.magic != configDefault.magic) {
+    DEBUG_PRINT("Using default config.");
+    configStore = configDefault;
+    return;
   }
 }
 
 bool config_save()
 {
-  Preferences prefs;
-  if (prefs.begin("blynk", false)) { // writeable
-    prefs.putBytes("config", &configStore, sizeof(configStore));
-    DEBUG_PRINT("Configuration stored to flash");
-    return true;
-  } else {
-    DEBUG_PRINT("Config write failed");
-    return false;
-  }
+  EEPROM.put(EEPROM_CONFIG_START, configStore);
+  EEPROM.commit();
+  DEBUG_PRINT("Configuration stored to flash");
+  return true;
 }
 
 bool config_init()
 {
+  EEPROM.begin(sizeof(ConfigStore));
   config_load();
   return true;
 }
@@ -151,4 +144,3 @@ void config_set_last_error(int error) {
     config_save();
   }
 }
-

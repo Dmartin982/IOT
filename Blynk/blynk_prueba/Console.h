@@ -1,11 +1,6 @@
 
 #include <Blynk/BlynkConsole.h>
 
-extern "C" {
-  #include "esp_partition.h"
-  #include "esp_ota_ops.h"
-}
-
 BlynkConsole    edgentConsole;
 
 void console_init()
@@ -94,48 +89,41 @@ void console_init()
   edgentConsole.addCommand("firmware", [](int argc, const char** argv) {
     if (argc < 1 || 0 == strcmp(argv[0], "info")) {
       unsigned sketchSize = ESP.getSketchSize();
+      unsigned partSize = sketchSize + ESP.getFreeSketchSpace();
 
       edgentConsole.printf(" Version:   %s (build %s)\n", BLYNK_FIRMWARE_VERSION, __DATE__ " " __TIME__);
       edgentConsole.printf(" Type:      %s\n", BLYNK_FIRMWARE_TYPE);
       edgentConsole.printf(" Platform:  %s\n", BLYNK_INFO_DEVICE);
       edgentConsole.printf(" SDK:       %s\n", ESP.getSdkVersion());
+      edgentConsole.printf(" ESP Core:  %s\n", ESP.getCoreVersion().c_str());
 
-      if (const esp_partition_t* running = esp_ota_get_running_partition()) {
-        edgentConsole.printf(" Partition: %s (%dK)\n", running->label, running->size / 1024);
-        edgentConsole.printf(" App size:  %dK (%d%%)\n", sketchSize/1024, (sketchSize*100)/(running->size));
-        edgentConsole.printf(" App MD5:   %s\n", ESP.getSketchMD5().c_str());
-      }
+      edgentConsole.printf(" App size:  %dK (%d%%)\n", sketchSize/1024, (sketchSize*100)/partSize);
+      edgentConsole.printf(" App MD5:   %s\n", ESP.getSketchMD5().c_str());
 
-    } else if (0 == strcmp(argv[0], "rollback")) {
-      if (Update.rollBack()) {
-        edgentConsole.print(R"json({"status":"ok"})json" "\n");
-        edgentTimer.setTimeout(50, restartMCU);
-      } else {
-        edgentConsole.print(R"json({"status":"error"})json" "\n");
-      }
     }
   });
 
   edgentConsole.addCommand("status", [](int argc, const char** argv) {
-    const int64_t t = esp_timer_get_time() / 1000000;
+    const uint64_t t = micros64() / 1000000;
     unsigned secs = t % BLYNK_SECS_PER_MIN;
     unsigned mins = (t / BLYNK_SECS_PER_MIN) % BLYNK_SECS_PER_MIN;
     unsigned hrs  = (t % BLYNK_SECS_PER_DAY) / BLYNK_SECS_PER_HOUR;
     unsigned days = t / BLYNK_SECS_PER_DAY;
 
+    uint32_t heap_free; uint16_t heap_max;
+    uint8_t heap_frag;
+    ESP.getHeapStats(&heap_free, &heap_max, &heap_frag);
     edgentConsole.printf(" Uptime:          %dd %dh %dm %ds\n", days, hrs, mins, secs);
-    edgentConsole.printf(" Chip:            %s rev %d\n", ESP.getChipModel(), ESP.getChipRevision());
+    edgentConsole.printf(" Reset reason:    %s\n",        ESP.getResetReason().c_str());
     edgentConsole.printf(" Flash:           %dK\n",       ESP.getFlashChipSize() / 1024);
-    edgentConsole.printf(" Stack unused:    %d\n",        uxTaskGetStackHighWaterMark(NULL));
-    edgentConsole.printf(" Heap free:       %d / %d\n",   ESP.getFreeHeap(), ESP.getHeapSize());
-    edgentConsole.printf("      max alloc:  %d\n",        ESP.getMaxAllocHeap());
-    edgentConsole.printf("      min free:   %d\n",        ESP.getMinFreeHeap());
-    if (ESP.getPsramSize()) {
-      edgentConsole.printf(" PSRAM free:      %d / %d\n", ESP.getFreePsram(), ESP.getPsramSize());
-    }
+    edgentConsole.printf(" Stack unused:    %d\n",        ESP.getFreeContStack());
+    edgentConsole.printf(" Heap free:       %d / %d\n",   heap_free, heap_max);
+    edgentConsole.printf("      fragment:   %d\n",        heap_frag);
+    edgentConsole.printf("      max alloc:  %d\n",        ESP.getMaxFreeBlockSize());
 #ifdef BLYNK_FS
-    uint32_t fs_total = BLYNK_FS.totalBytes();
-    edgentConsole.printf(" FS free:         %d / %d\n",   (fs_total-BLYNK_FS.usedBytes()), fs_total);
+    FSInfo fs_info;
+    BLYNK_FS.info(fs_info);
+    edgentConsole.printf(" FS free:         %d / %d\n",   (fs_info.totalBytes-fs_info.usedBytes), fs_info.totalBytes);
 #endif
   });
 
@@ -143,13 +131,9 @@ void console_init()
 
   edgentConsole.addCommand("ls", [](int argc, const char** argv) {
     const char* path = (argc < 1) ? "/" : argv[0];
-    File rootDir = BLYNK_FS.open(path);
-    while (File f = rootDir.openNextFile()) {
-#if defined(BLYNK_USE_SPIFFS) && (ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(4, 0, 0))
-      String fn = f.name();
-#else
-      String fn = f.path();
-#endif
+    Dir dir = BLYNK_FS.openDir(path);
+    while (dir.next()) {
+      File f = dir.openFile(BLYNK_FILE_READ);
 
       MD5Builder md5;
       md5.begin();
@@ -158,7 +142,7 @@ void console_init()
       String md5str = md5.toString();
 
       edgentConsole.printf("%8d %-24s %s\n",
-                            f.size(), fn.c_str(),
+                            f.size(), dir.fileName().c_str(),
                             md5str.substring(0,8).c_str());
     }
   });
@@ -192,7 +176,7 @@ void console_init()
       return;
     }
 
-    if (File f = BLYNK_FS.open(argv[0], FILE_READ)) {
+    if (File f = BLYNK_FS.open(argv[0], BLYNK_FILE_READ)) {
       while (f.available()) {
         edgentConsole.print((char)f.read());
       }
@@ -205,7 +189,7 @@ void console_init()
   edgentConsole.addCommand("echo", [](int argc, const char** argv) {
     if (argc != 2) return;
 
-    if (File f = BLYNK_FS.open(argv[1], FILE_WRITE)) {
+    if (File f = BLYNK_FS.open(argv[1], BLYNK_FILE_WRITE)) {
       if (!f.print(argv[0])) {
         edgentConsole.print("Cannot write file\n");
       }
@@ -222,4 +206,3 @@ BLYNK_WRITE(InternalPinDBG) {
   String cmd = String(param.asStr()) + "\n";
   edgentConsole.runCommand((char*)cmd.c_str());
 }
-
